@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: This CloudFormation template creates a VPC with subnets and an EC2 instance with access to an S3 bucket.
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 192.168.56.0/24
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Test VPC
+
+  InternetGetWay:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Test IGW
+
+  InternetGetWayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGetWay
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.168.56.0/28
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.168.56.16/28
+      AvailabilityZone: us-east-1b
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  Subnet1Association:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2Association:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGetWay
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupDescription: SG to test ping
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Security Group
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: "ami-0fc5d935ebf8bc3bc"
+      KeyName: "abc"
+      InstanceType: "t2.micro"
+      IamInstanceProfile: !Ref ListS3BucketsInstanceProfile
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet:
+            - Ref: "SecurityGroup"
+          SubnetId: !Ref PublicSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt update
+          sudo apt install awscli -y
+          aws s3 cp --recursive s3://pintuwap2023/destination-prefix/ /home/ubuntu/pintu/
+
+  ListS3BucketsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: S3FullAccess
+  ListS3BucketsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ListS3BucketsPolicy
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:List*
+            Resource: "*"
+      Roles:
+        - Ref: S3FullAccess
+  S3FullAccess:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
