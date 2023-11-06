@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: this is create vpc with subnets
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+       CidrBlock: 192.168.56.0/24
+       EnableDnsHostnames: true
+       EnableDnsSupport: true
+       InstanceTenancy: default
+       Tags: 
+          - Key: Name
+            Value: Test VPC
+
+  InternetGetWay:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: 
+       - Key: Name
+         Value: Test IGW
+
+  InternetGetWayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGetWay
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.168.56.0/28
+      AvailabilityZone: us-east-1a
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 192.168.56.16/28
+      AvailabilityZone: us-east-1b
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:  
+        Ref: VPC
+
+  Subnet1Association:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  Subnet2Association:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+      
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId:
+         Ref: PublicRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId:
+         Ref: InternetGetWay
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: VPC
+    Properties:
+      GroupDescription: SG to test ping
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Security Group
+  
+  MyEC2Instance1: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: "ami-0fc5d935ebf8bc3bc"
+      KeyName: "abc"
+      InstanceType: "t2.micro"
+      NetworkInterfaces: 
+      - AssociatePublicIpAddress: "true"
+        DeviceIndex: "0"
+        GroupSet: 
+          - Ref: "SecurityGroup"
+        SubnetId: !Ref PublicSubnet1
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt update
+          wget https://nodejs.org/dist/v16.20.0/node-v16.20.0-linux-x64.tar.xz
+          tar xJf node-v16.20.0-linux-x64.tar.xz
+          sudo mv node-v16.20.0-linux-x64 /usr/local/
+          sudo ln -s /usr/local/node-v16.20.0-linux-x64/bin/node /usr/local/bin/node
+          sudo ln -s /usr/local/node-v16.20.0-linux-x64/bin/npm /usr/local/bin/npm
+          
+
+      Tags:
+        - Key: Name
+          Value: Instance-1
